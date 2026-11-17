@@ -1,0 +1,562 @@
+'use client';
+
+import { useState } from 'react';
+import { Plus, Edit2, Copy, Trash2, Calendar, DollarSign, X, Check, Loader2, AlertCircle, Clock } from 'lucide-react';
+import { api } from '@/services/api';
+import { computeTimelineDisplayList, ISalaryTimeline, ITimelineDisplayItem } from '@/lib/salaryUtils';
+
+interface SalaryTimelineManagerProps {
+  user: any;
+  onClose: () => void;
+  onUpdate: () => void;
+}
+
+export default function SalaryTimelineManager({ user, onClose, onUpdate }: SalaryTimelineManagerProps) {
+  const [timelines, setTimelines] = useState<ISalaryTimeline[]>(user.salaryTimelines || []);
+  const [isAdding, setIsAdding] = useState(false);
+  const [editingTimelineId, setEditingTimelineId] = useState<string | null>(null);
+  
+  // Form state
+  const [effectiveFrom, setEffectiveFrom] = useState('');
+  const [monthlySalary, setMonthlySalary] = useState('');
+  const [basicSalary, setBasicSalary] = useState('');
+  const [hra, setHra] = useState('');
+  const [da, setDa] = useState('');
+  const [bonus, setBonus] = useState('0');
+  const [esiDeduction, setEsiDeduction] = useState('0');
+  const [rentalDeduction, setRentalDeduction] = useState('0');
+  const [loanDeduction, setLoanDeduction] = useState('0');
+  const [otherDeduction, setOtherDeduction] = useState('0');
+  
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  // Compute display items with automatic sorting, Effective To calculation, and status tagging
+  const displayItems: ITimelineDisplayItem[] = computeTimelineDisplayList(timelines);
+
+  const resetForm = () => {
+    setEffectiveFrom('');
+    setMonthlySalary('');
+    setBasicSalary('');
+    setHra('');
+    setDa('');
+    setBonus('0');
+    setEsiDeduction('0');
+    setRentalDeduction('0');
+    setLoanDeduction('0');
+    setOtherDeduction('0');
+    setIsAdding(false);
+    setEditingTimelineId(null);
+    setError(null);
+  };
+
+  const handleGrossSalaryChange = (valStr: string) => {
+    setMonthlySalary(valStr);
+    const val = Number(valStr);
+    if (!isNaN(val) && val > 0) {
+      const bs = Math.round(val * 0.5);
+      const h = Math.round(val * 0.15);
+      const d = val - bs - h;
+      setBasicSalary(String(bs));
+      setHra(String(h));
+      setDa(String(d));
+    }
+  };
+
+  const handleComponentChange = (field: 'bs' | 'hra' | 'da' | 'bonus', valStr: string) => {
+    let bs = field === 'bs' ? Number(valStr) || 0 : Number(basicSalary) || 0;
+    let h = field === 'hra' ? Number(valStr) || 0 : Number(hra) || 0;
+    let d = field === 'da' ? Number(valStr) || 0 : Number(da) || 0;
+    let b = field === 'bonus' ? Number(valStr) || 0 : Number(bonus) || 0;
+
+    if (field === 'bs') setBasicSalary(valStr);
+    if (field === 'hra') setHra(valStr);
+    if (field === 'da') setDa(valStr);
+    if (field === 'bonus') setBonus(valStr);
+
+    const total = bs + h + d + b;
+    setMonthlySalary(String(total));
+  };
+
+  const handleStartAdd = () => {
+    resetForm();
+    setIsAdding(true);
+  };
+
+  const handleStartEdit = (item: ITimelineDisplayItem) => {
+    setError(null);
+    setEditingTimelineId(item._id || null);
+    setIsAdding(false);
+
+    setEffectiveFrom(item.effectiveFrom);
+    setMonthlySalary(String(item.monthlySalary));
+    setBasicSalary(String(item.basicSalary));
+    setHra(String(item.hra));
+    setDa(String(item.da));
+    setBonus(String(item.bonus || 0));
+    setEsiDeduction(String(item.esiDeduction || 0));
+    setRentalDeduction(String(item.rentalDeduction || 0));
+    setLoanDeduction(String(item.loanDeduction || 0));
+    setOtherDeduction(String(item.otherDeduction || 0));
+  };
+
+  const handleStartClone = (item: ITimelineDisplayItem) => {
+    setError(null);
+    setEditingTimelineId(null);
+    setIsAdding(true);
+
+    // Pre-fill fields from copied timeline, clear date for admin to select
+    setEffectiveFrom('');
+    setMonthlySalary(String(item.monthlySalary));
+    setBasicSalary(String(item.basicSalary));
+    setHra(String(item.hra));
+    setDa(String(item.da));
+    setBonus(String(item.bonus || 0));
+    setEsiDeduction(String(item.esiDeduction || 0));
+    setRentalDeduction(String(item.rentalDeduction || 0));
+    setLoanDeduction(String(item.loanDeduction || 0));
+    setOtherDeduction(String(item.otherDeduction || 0));
+    setSuccess('Cloned timeline components into new entry form. Select an Effective Date to save.');
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccess(null);
+
+    const salaryNum = Number(monthlySalary);
+    if (!monthlySalary || isNaN(salaryNum) || salaryNum <= 0) {
+      setError('Monthly Salary must be greater than 0');
+      return;
+    }
+
+    if (!effectiveFrom) {
+      setError('Please select a valid Effective From date');
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const payload = {
+        effectiveFrom,
+        monthlySalary: salaryNum,
+        basicSalary: Number(basicSalary) || Math.round(salaryNum * 0.5),
+        hra: Number(hra) || Math.round(salaryNum * 0.15),
+        da: Number(da) || (salaryNum - (Number(basicSalary) || 0) - (Number(hra) || 0)),
+        bonus: Number(bonus) || 0,
+        esiDeduction: Number(esiDeduction) || 0,
+        rentalDeduction: Number(rentalDeduction) || 0,
+        loanDeduction: Number(loanDeduction) || 0,
+        otherDeduction: Number(otherDeduction) || 0
+      };
+
+      if (editingTimelineId) {
+        // Edit existing timeline
+        const res = await api(`/api/admin/employees/${user._id}/salary-timelines`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            timelineId: editingTimelineId,
+            ...payload
+          })
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to update salary timeline');
+
+        setTimelines(data.salaryTimelines || []);
+        setSuccess('Salary timeline updated successfully');
+      } else {
+        // Add new timeline
+        const res = await api(`/api/admin/employees/${user._id}/salary-timelines`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to add salary timeline');
+
+        setTimelines(data.salaryTimelines || []);
+        setSuccess('Salary timeline added successfully');
+      }
+
+      resetForm();
+      onUpdate();
+    } catch (err: any) {
+      setError(err.message || 'An error occurred');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDelete = async (item: ITimelineDisplayItem) => {
+    if (!item._id) return;
+    if (!confirm(`Are you sure you want to delete the salary timeline effective from ${item.effectiveFromFormatted}?`)) return;
+
+    setError(null);
+    setSuccess(null);
+    setIsLoading(true);
+
+    try {
+      const res = await api(`/api/admin/employees/${user._id}/salary-timelines?timelineId=${item._id}`, {
+        method: 'DELETE'
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to delete salary timeline');
+
+      setTimelines(data.salaryTimelines || []);
+      setSuccess('Salary timeline deleted successfully');
+      onUpdate();
+    } catch (err: any) {
+      setError(err.message || 'An error occurred');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-card border border-border text-card-foreground rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="p-6 border-b border-border flex items-center justify-between bg-muted/30">
+          <div>
+            <h2 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
+              <Clock className="w-5 h-5 text-primary" />
+              Salary Timeline Configuration
+            </h2>
+            <p className="text-xs text-muted-foreground mt-1">
+              Employee: <span className="font-bold text-foreground">{user.name}</span> ({user.employeeId}) &bull; {user.designation || user.role}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-6 overflow-y-auto space-y-6 flex-1">
+          {/* Alerts */}
+          {error && (
+            <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-sm font-semibold flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {success && (
+            <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-500 text-sm font-semibold flex items-center gap-2">
+              <Check className="w-4 h-4 shrink-0" />
+              <span>{success}</span>
+            </div>
+          )}
+
+          {/* Top Bar with Add Button */}
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Salary History</h3>
+            {!isAdding && !editingTimelineId && (
+              <button
+                onClick={handleStartAdd}
+                className="inline-flex items-center px-4 py-2 bg-primary text-primary-foreground text-xs font-bold rounded-xl shadow-sm hover:bg-primary/90 transition-colors"
+              >
+                <Plus className="w-4 h-4 mr-1.5" />
+                Add Salary Timeline
+              </button>
+            )}
+          </div>
+
+          {/* Form (Add / Edit / Clone) */}
+          {(isAdding || editingTimelineId) && (
+            <form onSubmit={handleSave} className="bg-muted/40 p-5 border border-border rounded-xl space-y-4">
+              <div className="text-sm font-bold text-foreground flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-primary" />
+                {editingTimelineId ? 'Edit Salary Timeline' : 'Add New Salary Timeline'}
+              </div>
+
+              {/* Date & Gross Salary */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-muted-foreground mb-1">
+                    Effective From Date <span className="text-destructive">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    className="w-full bg-background border border-border rounded-xl text-foreground px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none font-medium"
+                    value={effectiveFrom}
+                    onChange={(e) => setEffectiveFrom(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-muted-foreground mb-1">
+                    Total Gross Salary (₹) <span className="text-destructive">*</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2.5 text-xs text-muted-foreground font-bold">₹</span>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      required
+                      placeholder="e.g. 8000"
+                      className="w-full bg-background border border-border rounded-xl text-foreground pl-7 pr-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none font-bold"
+                      value={monthlySalary}
+                      onChange={(e) => handleGrossSalaryChange(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Earnings Split 50:15:35 */}
+              <div className="pt-2 border-t border-border/50">
+                <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
+                  Salary Earnings Breakdown
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-muted-foreground mb-1">Basic Salary</label>
+                    <input
+                      type="number"
+                      className="w-full bg-background border border-border rounded-lg text-foreground px-2.5 py-1.5 text-xs font-bold outline-none focus:ring-1 focus:ring-primary"
+                      value={basicSalary}
+                      onChange={(e) => handleComponentChange('bs', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-muted-foreground mb-1">HRA </label>
+                    <input
+                      type="number"
+                      className="w-full bg-background border border-border rounded-lg text-foreground px-2.5 py-1.5 text-xs font-bold outline-none focus:ring-1 focus:ring-primary"
+                      value={hra}
+                      onChange={(e) => handleComponentChange('hra', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-muted-foreground mb-1">DA</label>
+                    <input
+                      type="number"
+                      className="w-full bg-background border border-border rounded-lg text-foreground px-2.5 py-1.5 text-xs font-bold outline-none focus:ring-1 focus:ring-primary"
+                      value={da}
+                      onChange={(e) => handleComponentChange('da', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-muted-foreground mb-1">Bonus</label>
+                    <input
+                      type="number"
+                      className="w-full bg-background border border-border rounded-lg text-foreground px-2.5 py-1.5 text-xs font-bold outline-none focus:ring-1 focus:ring-primary"
+                      value={bonus}
+                      onChange={(e) => handleComponentChange('bonus', e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Deductions Breakdown */}
+              <div className="pt-2 border-t border-border/50">
+                <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
+                  Standard Deductions Config
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-muted-foreground mb-1">ESI Deduction (₹)</label>
+                    <input
+                      type="number"
+                      className="w-full bg-background border border-border rounded-lg text-foreground px-2.5 py-1.5 text-xs font-bold outline-none focus:ring-1 focus:ring-primary"
+                      value={esiDeduction}
+                      onChange={(e) => setEsiDeduction(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-muted-foreground mb-1">Rental Deduction (₹)</label>
+                    <input
+                      type="number"
+                      className="w-full bg-background border border-border rounded-lg text-foreground px-2.5 py-1.5 text-xs font-bold outline-none focus:ring-1 focus:ring-primary"
+                      value={rentalDeduction}
+                      onChange={(e) => setRentalDeduction(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-muted-foreground mb-1">Company Loan Deduction (₹)</label>
+                    <input
+                      type="number"
+                      className="w-full bg-background border border-border rounded-lg text-foreground px-2.5 py-1.5 text-xs font-bold outline-none focus:ring-1 focus:ring-primary"
+                      value={loanDeduction}
+                      onChange={(e) => setLoanDeduction(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-muted-foreground mb-1">Other Deduction (₹)</label>
+                    <input
+                      type="number"
+                      className="w-full bg-background border border-border rounded-lg text-foreground px-2.5 py-1.5 text-xs font-bold outline-none focus:ring-1 focus:ring-primary"
+                      value={otherDeduction}
+                      onChange={(e) => setOtherDeduction(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  disabled={isLoading}
+                  className="px-4 py-2 bg-muted text-foreground text-xs font-bold rounded-xl hover:bg-accent transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="px-4 py-2 bg-primary text-primary-foreground text-xs font-bold rounded-xl hover:bg-primary/90 transition-colors flex items-center disabled:opacity-50 shadow-sm"
+                >
+                  {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Check className="w-3.5 h-3.5 mr-1.5" />}
+                  Save Salary Timeline
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* Timelines Table */}
+          <div className="border border-border rounded-xl overflow-hidden">
+            <table className="min-w-full divide-y divide-border">
+              <thead className="bg-muted/40">
+                <tr>
+                  <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                    Effective From
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                    Effective To
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                    Earnings (BS : HRA : DA)
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-right text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                    Total Gross
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-center text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-right text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border bg-card">
+                {displayItems.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-8 text-center text-sm text-muted-foreground font-semibold">
+                      No salary timelines configured. Click &quot;Add Salary Timeline&quot; to define salary history.
+                    </td>
+                  </tr>
+                ) : (
+                  displayItems.map((item) => {
+                    const isBeingEdited = editingTimelineId === item._id;
+
+                    return (
+                      <tr
+                        key={item._id || item.effectiveFrom}
+                        className={`hover:bg-muted/30 transition-colors ${
+                          isBeingEdited ? 'bg-primary/5' : ''
+                        }`}
+                      >
+                        <td className="px-4 py-4 text-sm font-bold text-foreground whitespace-nowrap">
+                          {item.effectiveFromFormatted}
+                        </td>
+                        <td className="px-4 py-4 text-sm text-muted-foreground whitespace-nowrap font-medium">
+                          {item.effectiveToFormatted}
+                        </td>
+                        <td className="px-4 py-4 text-xs text-muted-foreground whitespace-nowrap">
+                          <div className="font-semibold text-foreground">
+                            BS: ₹{item.basicSalary.toLocaleString()} | HRA: ₹{item.hra.toLocaleString()} | DA: ₹{item.da.toLocaleString()}
+                          </div>
+                          {item.bonus ? <div className="text-[10px] text-emerald-500 font-bold">Bonus: ₹{item.bonus.toLocaleString()}</div> : null}
+                          {(item.esiDeduction > 0 || item.rentalDeduction > 0 || item.loanDeduction > 0 || item.otherDeduction > 0) && (
+                            <div className="text-[10px] text-destructive font-medium mt-0.5">
+                              Ded: {[
+                                item.esiDeduction > 0 ? `ESI: ₹${item.esiDeduction.toLocaleString()}` : null,
+                                item.rentalDeduction > 0 ? `Rent: ₹${item.rentalDeduction.toLocaleString()}` : null,
+                                item.loanDeduction > 0 ? `Loan: ₹${item.loanDeduction.toLocaleString()}` : null,
+                                item.otherDeduction > 0 ? `Other: ₹${item.otherDeduction.toLocaleString()}` : null
+                              ].filter(Boolean).join(' | ')}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-4 text-sm font-bold text-foreground text-right whitespace-nowrap">
+                          ₹{item.monthlySalary.toLocaleString('en-IN')}
+                        </td>
+                        <td className="px-4 py-4 text-center whitespace-nowrap">
+                          {item.status === 'Current' && (
+                            <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 text-xs font-bold rounded-full">
+                              Current
+                            </span>
+                          )}
+                          {item.status === 'Historical' && (
+                            <span className="px-2.5 py-1 bg-muted text-muted-foreground border border-border text-xs font-bold rounded-full">
+                              Historical
+                            </span>
+                          )}
+                          {item.status === 'Future' && (
+                            <span className="px-2.5 py-1 bg-blue-500/10 text-blue-500 border border-blue-500/20 text-xs font-bold rounded-full">
+                              Future
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-4 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => handleStartEdit(item)}
+                              disabled={isLoading}
+                              className="p-1.5 text-primary hover:bg-primary/10 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1 text-xs font-bold"
+                              title="Edit timeline"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" /> 
+                            </button>
+                            <button
+                              onClick={() => handleStartClone(item)}
+                              disabled={isLoading}
+                              className="p-1.5 text-amber-500 hover:bg-amber-500/10 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1 text-xs font-bold"
+                              title="Clone this timeline into new form"
+                            >
+                              <Copy className="w-3.5 h-3.5" /> 
+                            </button>
+                            <button
+                              onClick={() => handleDelete(item)}
+                              disabled={isLoading}
+                              className="p-1.5 text-destructive hover:bg-destructive/10 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1 text-xs font-bold"
+                              title="Delete timeline"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" /> 
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="p-4 border-t border-border bg-muted/20 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-5 py-2 bg-muted text-foreground text-sm font-bold rounded-xl hover:bg-accent transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

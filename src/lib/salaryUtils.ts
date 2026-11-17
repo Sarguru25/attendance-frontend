@@ -1,0 +1,284 @@
+import { format, subDays } from 'date-fns';
+
+export interface ISalaryTimeline {
+  _id?: any;
+  effectiveFrom: Date | string;
+  monthlySalary: number;
+  basicSalary?: number;
+  hra?: number;
+  da?: number;
+  bonus?: number;
+  esiDeduction?: number;
+  rentalDeduction?: number;
+  loanDeduction?: number;
+  otherDeduction?: number;
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
+}
+
+export interface ITimelineDisplayItem {
+  _id?: string;
+  effectiveFrom: string; // YYYY-MM-DD
+  effectiveFromFormatted: string; // e.g. 01-Mar-2026
+  effectiveTo: string; // YYYY-MM-DD or 'Present'
+  effectiveToFormatted: string; // e.g. 31-Aug-2026 or Present
+  monthlySalary: number;
+  basicSalary: number;
+  hra: number;
+  da: number;
+  bonus: number;
+  esiDeduction: number;
+  rentalDeduction: number;
+  loanDeduction: number;
+  otherDeduction: number;
+  status: 'Historical' | 'Current' | 'Future';
+}
+
+/**
+ * Normalizes a date to YYYY-MM-DD string format
+ */
+export function formatDateToYYYYMMDD(dateVal: Date | string): string {
+  if (!dateVal) return '';
+  if (typeof dateVal === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateVal)) {
+    return dateVal;
+  }
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return '';
+  return format(d, 'yyyy-MM-dd');
+}
+
+/**
+ * Formats YYYY-MM-DD date to dd-MMM-yyyy format for UI display (e.g. 01-Mar-2026)
+ */
+export function formatDateDisplay(dateVal: Date | string): string {
+  const ymd = formatDateToYYYYMMDD(dateVal);
+  if (!ymd) return '';
+  const d = new Date(`${ymd}T00:00:00`);
+  return format(d, 'dd-MMM-yyyy');
+}
+
+/**
+ * Computes sorted timeline items with calculated Effective To dates and Status badges for UI display.
+ */
+export function computeTimelineDisplayList(
+  timelines: ISalaryTimeline[],
+  referenceDate: Date = new Date()
+): ITimelineDisplayItem[] {
+  if (!timelines || timelines.length === 0) return [];
+
+  // Sort ASC by effectiveFrom
+  const sorted = [...timelines].sort((a, b) => {
+    const timeA = new Date(a.effectiveFrom).getTime();
+    const timeB = new Date(b.effectiveFrom).getTime();
+    return timeA - timeB;
+  });
+
+  const refYMD = formatDateToYYYYMMDD(referenceDate);
+
+  return sorted.map((item, index) => {
+    const effFromYMD = formatDateToYYYYMMDD(item.effectiveFrom);
+    const effFromFormatted = formatDateDisplay(item.effectiveFrom);
+
+    let effToYMD = 'Present';
+    let effToFormatted = 'Present';
+
+    if (index < sorted.length - 1) {
+      const nextEffFromYMD = formatDateToYYYYMMDD(sorted[index + 1].effectiveFrom);
+      const nextDate = new Date(`${nextEffFromYMD}T00:00:00`);
+      const prevDate = subDays(nextDate, 1);
+      effToYMD = format(prevDate, 'yyyy-MM-dd');
+      effToFormatted = format(prevDate, 'dd-MMM-yyyy');
+    }
+
+    let status: 'Historical' | 'Current' | 'Future' = 'Historical';
+    if (effFromYMD > refYMD) {
+      status = 'Future';
+    } else if (effToYMD === 'Present' || effToYMD >= refYMD) {
+      status = 'Current';
+    } else {
+      status = 'Historical';
+    }
+
+    const monthlySalary = item.monthlySalary || 0;
+    const basicSalary = item.basicSalary ?? Math.round(monthlySalary * 0.5);
+    const hra = item.hra ?? Math.round(monthlySalary * 0.15);
+    const da = item.da ?? (monthlySalary - basicSalary - hra);
+    const bonus = item.bonus || 0;
+    const esiDeduction = item.esiDeduction || 0;
+    const rentalDeduction = item.rentalDeduction || 0;
+    const loanDeduction = item.loanDeduction || 0;
+    const otherDeduction = item.otherDeduction || 0;
+
+    return {
+      _id: item._id?.toString(),
+      effectiveFrom: effFromYMD,
+      effectiveFromFormatted: effFromFormatted,
+      effectiveTo: effToYMD,
+      effectiveToFormatted: effToFormatted,
+      monthlySalary,
+      basicSalary,
+      hra,
+      da,
+      bonus,
+      esiDeduction,
+      rentalDeduction,
+      loanDeduction,
+      otherDeduction,
+      status,
+    };
+  });
+}
+
+/**
+ * Gets the applicable salary timeline and monthly salary for a given employee and payroll period (month, year).
+ * Selects the timeline with the latest effectiveFrom date that is on or before the end of the payroll month.
+ */
+export function getSalaryForPayrollPeriod(
+  employee: {
+    salaryTimelines?: ISalaryTimeline[];
+    monthlySalary?: number;
+    joiningDate?: Date | string;
+  },
+  month: number, // 1-12
+  year: number
+): { monthlySalary: number; effectiveFrom?: Date | string; timeline?: ISalaryTimeline } | null {
+  const timelines = employee.salaryTimelines || [];
+
+  // End of payroll month format 'YYYY-MM-DD'
+  const lastDayOfMonth = new Date(year, month, 0).getDate();
+  const monthStr = String(month).padStart(2, '0');
+  const lastDayStr = String(lastDayOfMonth).padStart(2, '0');
+  const payrollPeriodEndStr = `${year}-${monthStr}-${lastDayStr}`;
+
+  if (timelines.length > 0) {
+    // Filter timelines where effectiveFrom <= payrollPeriodEnd
+    const validTimelines = timelines.filter(t => {
+      const effDateStr = formatDateToYYYYMMDD(t.effectiveFrom);
+      return effDateStr && effDateStr <= payrollPeriodEndStr;
+    });
+
+    if (validTimelines.length === 0) {
+      // Fall back to earliest configured timeline if employee was employed
+      const sortedASC = [...timelines].sort((a, b) => new Date(a.effectiveFrom).getTime() - new Date(b.effectiveFrom).getTime());
+      const earliest = sortedASC[0];
+      if (earliest && earliest.monthlySalary > 0) {
+        return {
+          monthlySalary: earliest.monthlySalary,
+          effectiveFrom: earliest.effectiveFrom,
+          timeline: earliest
+        };
+      }
+    } else {
+      // Sort DESC to get latest active timeline on or before payroll period
+      validTimelines.sort((a, b) => {
+        const dateA = new Date(a.effectiveFrom).getTime();
+        const dateB = new Date(b.effectiveFrom).getTime();
+        return dateB - dateA;
+      });
+
+      const activeTimeline = validTimelines[0];
+      return {
+        monthlySalary: activeTimeline.monthlySalary,
+        effectiveFrom: activeTimeline.effectiveFrom,
+        timeline: activeTimeline
+      };
+    }
+  }
+
+  // Fallback for existing employees without salaryTimelines array
+  if (typeof employee.monthlySalary === 'number' && employee.monthlySalary > 0) {
+    return {
+      monthlySalary: employee.monthlySalary,
+      effectiveFrom: employee.joiningDate || undefined
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Resolves the full payslip breakdown with exact separation of:
+ * - Other Deductions from Salary Timeline (otherDeduction)
+ * - Loss of Pay for Absents & Un-paid leaves
+ */
+export function resolvePayslipBreakdown(payroll: any, user: any) {
+  const daysInMonth = payroll.totalCalendarDays || new Date(payroll.year, payroll.month, 0).getDate();
+  const monthlySalary = payroll.monthlySalary || 0;
+  const perDaySalary = daysInMonth > 0 ? (monthlySalary / daysInMonth) : 0;
+
+  const basicSalary = payroll.basicSalary ?? Math.round(monthlySalary * 0.5);
+  const hraAllowance = payroll.hra ?? Math.round(monthlySalary * 0.15);
+  const da = payroll.da ?? Math.max(0, monthlySalary - basicSalary - hraAllowance);
+  const bonus = payroll.bonus || 0;
+  const grossEarnings = payroll.grossSalary || (basicSalary + hraAllowance + da + bonus);
+
+  const esi = payroll.esiDeduction ?? payroll.salaryDeductionsSnapshot?.esi ?? 0;
+  const tds = payroll.tdsDeduction ?? payroll.salaryDeductionsSnapshot?.tds ?? 0;
+  const loan = payroll.loanDeduction ?? payroll.salaryDeductionsSnapshot?.loan ?? 0;
+  const rental = payroll.rentalDeduction ?? user?.salaryDeductions?.hra?.amount ?? payroll.salaryDeductionsSnapshot?.hra ?? 0;
+
+  // 1. Resolve Timeline Other Deduction from active timeline or snapshot
+  let timelineOtherDeduction = 0;
+  if (user?.salaryTimelines && user.salaryTimelines.length > 0) {
+    const salaryInfo = getSalaryForPayrollPeriod(user, payroll.month, payroll.year);
+    if (salaryInfo?.timeline?.otherDeduction != null) {
+      timelineOtherDeduction = salaryInfo.timeline.otherDeduction;
+    }
+  } else if (payroll.salaryDeductionsSnapshot?.other != null) {
+    timelineOtherDeduction = payroll.salaryDeductionsSnapshot.other;
+  }
+
+  // 2. Resolve Loss of Pay (LOP) for absents and un-paid leaves
+  let lossOfPay = 0;
+  if (payroll.lossOfPay != null) {
+    lossOfPay = payroll.lossOfPay;
+  } else {
+    const lopDays = payroll.deductionDays ?? ((payroll.absentDays || 0) + (payroll.unpaidLeaveDays || 0));
+    lossOfPay = Math.round(lopDays * perDaySalary);
+  }
+
+  // 3. Resolve Other Deductions (from Salary Timeline)
+  let otherDeductions = 0;
+  if (payroll.lossOfPay != null) {
+    otherDeductions = payroll.otherDeductions ?? timelineOtherDeduction;
+  } else if (timelineOtherDeduction > 0) {
+    otherDeductions = timelineOtherDeduction;
+  } else if (payroll.salaryDeductionsSnapshot?.other != null) {
+    otherDeductions = payroll.salaryDeductionsSnapshot.other;
+  } else {
+    // In legacy records where otherDeductions stored the total (LOP + timeline)
+    otherDeductions = Math.max(0, (payroll.otherDeductions || 0) - lossOfPay);
+  }
+
+  const calculatedTotalDeductions = esi + tds + loan + rental + otherDeductions + lossOfPay;
+  const totalDeductions = payroll.deductionAmount ?? payroll.deductions ?? calculatedTotalDeductions;
+  const netPayable = payroll.netSalary ?? payroll.finalSalary ?? (grossEarnings - totalDeductions);
+
+  const unpaidLeaveTaken = payroll.unpaidLeaveDays ?? payroll.absentDays ?? 0;
+  const paidLeaveTaken = payroll.paidLeaveDays ?? payroll.leaveDays ?? 0;
+  const weekOff = payroll.weeklyOffDays ?? 0;
+  const daysPaid = payroll.paidDays ?? Math.max(0, (payroll.totalWorkingDays || 0) - unpaidLeaveTaken);
+
+  return {
+    daysInMonth,
+    monthlySalary,
+    perDaySalary,
+    basicSalary,
+    hraAllowance,
+    da,
+    bonus,
+    grossEarnings,
+    esi,
+    tds,
+    loan,
+    rental,
+    otherDeductions,
+    lossOfPay,
+    totalDeductions,
+    netPayable,
+    unpaidLeaveTaken,
+    paidLeaveTaken,
+    weekOff,
+    daysPaid,
+  };
+}
