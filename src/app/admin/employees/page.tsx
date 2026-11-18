@@ -4,13 +4,25 @@ import { cookies, headers } from 'next/headers';
 export const dynamic = 'force-dynamic';
 
 export default async function EmployeesPage() {
-  const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+  let backendUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000').trim().replace(/\/$/, '');
+  if (!backendUrl.startsWith('http://localhost') && !backendUrl.startsWith('http://127.0.0.1') && backendUrl.startsWith('http://')) {
+    backendUrl = backendUrl.replace('http://', 'https://');
+  }
   const cookieStore = await cookies();
   const reqHeaders = await headers();
 
   const cookieHeader = cookieStore.toString();
-  const companyId = cookieStore.get('activeCompanyId')?.value || '';
-  const token = cookieStore.get('token')?.value || '';
+  let companyId = cookieStore.get('activeCompanyId')?.value || '';
+  let token = cookieStore.get('token')?.value || '';
+
+  if (!token) {
+    const { auth } = await import('@/auth');
+    const session = await auth();
+    token = (session as any)?.accessToken || (session?.user as any)?.accessToken || '';
+    if (!companyId) {
+      companyId = session?.user?.companyId || '';
+    }
+  }
 
   let employees: any[] = [];
   let shifts: any[] = [];

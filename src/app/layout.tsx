@@ -22,6 +22,7 @@ const allura = Allura({
 import NativePushNotifications from '@/components/NativePushNotifications';
 import WebPushInitializer from '@/components/WebPushInitializer';
 import UserStatusWatcher from '@/components/UserStatusWatcher';
+import SessionSync from '@/components/SessionSync';
 
 export default function RootLayout({
   children,
@@ -47,6 +48,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen font-sans antialiased bg-background text-foreground">
         <SessionProvider>
+          <SessionSync />
           <CompanyProvider>
             <UserStatusWatcher />
             <NativePushNotifications />

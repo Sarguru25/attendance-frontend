@@ -10,9 +10,13 @@ import { api } from '@/services/api';
 
 function getAttachmentUrl(file: string): string {
   if (!file) return '';
-  const match = file.match(/\/file\/([a-zA-Z0-9]+)/);
-  if (match) {
-    return `/api/leaves/attachment/${match[1]}`;
+  const fileMatch = file.match(/\/file\/([a-zA-Z0-9]+)/);
+  if (fileMatch) {
+    return `/api/backend/leaves/attachment/${fileMatch[1]}`;
+  }
+  const attachMatch = file.match(/\/attachment\/([a-zA-Z0-9]+)/);
+  if (attachMatch) {
+    return `/api/backend/leaves/attachment/${attachMatch[1]}`;
   }
   return file;
 }
@@ -21,6 +25,7 @@ const fetcher = (url: string) => api(url).then(res => res.json());
 
 export default function EmployeeLeavesClient() {
   const { data, error, isLoading, mutate } = useSWR('/api/employee/leaves', fetcher);
+  const { data: profileData, mutate: mutateProfile } = useSWR('/api/profile', fetcher);
   const { data: restrictedHolidaysData } = useSWR('/api/holidays?type=restricted', fetcher);
   const rawRestrictedHolidays = restrictedHolidaysData?.holidays || [];
   const restrictedHolidays: any[] = Array.from(
@@ -68,9 +73,11 @@ export default function EmployeeLeavesClient() {
       }
       submitFormData.append('reason', formData.reason);
 
-      selectedFiles.forEach(file => {
-        submitFormData.append('files', file);
-      });
+      if (formData.leaveType === 'Sick Leave') {
+        selectedFiles.forEach(file => {
+          submitFormData.append('files', file);
+        });
+      }
 
       const res = await api('/api/leaves/apply', {
         method: 'POST',
@@ -83,6 +90,7 @@ export default function EmployeeLeavesClient() {
       }
       
       mutate();
+      mutateProfile();
       setIsModalOpen(false);
       setFormData({ leaveType: '', fromDate: '', toDate: '', duration: 'full_day', halfDaySession: '', reason: '' });
       setSelectedFiles([]);
@@ -120,7 +128,7 @@ export default function EmployeeLeavesClient() {
   };
 
   const leaves = data?.leaves || [];
-  const balanceData = data?.balance;
+  const balanceData = data?.balance || profileData?.user?.leaveBalance;
   
   // Calculate total taken days across all paid leave types
   const takenDays = balanceData ? (
@@ -310,6 +318,9 @@ export default function EmployeeLeavesClient() {
                     value={formData.leaveType}
                     onChange={(e) => {
                       const newType = e.target.value;
+                      if (newType !== 'Sick Leave') {
+                        setSelectedFiles([]);
+                      }
                       if (newType === 'Restricted Holiday') {
                         setFormData({
                           ...formData,
@@ -486,43 +497,45 @@ export default function EmployeeLeavesClient() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-card-foreground mb-1.5">
-                    {formData.leaveType === 'Sick Leave' ? 'Medical Certificate (Zoho WorkDrive)' : 'Supporting Documents'}
-                  </label>
-                  <input
-                    type="file"
-                    multiple
-                    accept=".pdf,.png,.jpg,.jpeg"
-                    className="w-full px-4 py-2.5 bg-background border border-border rounded-xl text-muted-foreground file:mr-4 file:py-1.5 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-bold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 text-sm transition-colors"
-                    onChange={handleFileUpload}
-                  />
-                  <p className="text-xs text-muted-foreground mt-1.5">
-                    Acceptable formats: <span className="font-semibold text-foreground">PDF, PNG, JPG, JPEG</span>. Stored securely in Zoho WorkDrive.
-                  </p>
+                {formData.leaveType === 'Sick Leave' && (
+                  <div>
+                    <label className="block text-sm font-medium text-card-foreground mb-1.5">
+                      Medical Certificate (Zoho WorkDrive)
+                    </label>
+                    <input
+                      type="file"
+                      multiple
+                      accept=".pdf,.png,.jpg,.jpeg"
+                      className="w-full px-4 py-2.5 bg-background border border-border rounded-xl text-muted-foreground file:mr-4 file:py-1.5 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-bold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 text-sm transition-colors"
+                      onChange={handleFileUpload}
+                    />
+                    <p className="text-xs text-muted-foreground mt-1.5">
+                      Acceptable formats: <span className="font-semibold text-foreground">PDF, PNG, JPG, JPEG</span>. Stored securely in Zoho WorkDrive.
+                    </p>
 
-                  {selectedFiles.length > 0 && (
-                    <div className="mt-3 space-y-2">
-                      {selectedFiles.map((file, idx) => (
-                        <div key={idx} className="flex items-center justify-between p-2 bg-muted/40 rounded-xl border border-border text-xs">
-                          <div className="flex items-center gap-2 truncate">
-                            <FileText className="w-4 h-4 text-primary shrink-0" />
-                            <span className="font-medium truncate text-foreground">{file.name}</span>
-                            <span className="text-muted-foreground text-[10px]">({(file.size / 1024).toFixed(1)} KB)</span>
+                    {selectedFiles.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        {selectedFiles.map((file, idx) => (
+                          <div key={idx} className="flex items-center justify-between p-2 bg-muted/40 rounded-xl border border-border text-xs">
+                            <div className="flex items-center gap-2 truncate">
+                              <FileText className="w-4 h-4 text-primary shrink-0" />
+                              <span className="font-medium truncate text-foreground">{file.name}</span>
+                              <span className="text-muted-foreground text-[10px]">({(file.size / 1024).toFixed(1)} KB)</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveFile(idx)}
+                              className="text-destructive hover:text-destructive/80 p-1 rounded-md transition-colors"
+                              title="Remove file"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveFile(idx)}
-                            className="text-destructive hover:text-destructive/80 p-1 rounded-md transition-colors"
-                            title="Remove file"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="mt-5 sm:mt-6 sm:flex sm:flex-row-reverse border-t border-border pt-4">
                   <button

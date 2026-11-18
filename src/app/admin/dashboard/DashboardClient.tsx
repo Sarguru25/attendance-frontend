@@ -18,22 +18,22 @@ export default function DashboardClient() {
     { name: 'Total Employees', value: '-', icon: Users, color: 'text-primary', bg: 'bg-primary/10' },
     { name: 'Present Today', value: '-', icon: UserCheck, color: 'text-success', bg: 'bg-success/10' },
     { name: 'Absent Today', value: '-', icon: AlertTriangle, color: 'text-destructive', bg: 'bg-destructive/10' },
-    { name: 'Total SL Used', value: '-', icon: FileSpreadsheet, color: 'text-warning', bg: 'bg-warning/10' },
-    { name: 'Total CL Used', value: '-', icon: FileSpreadsheet, color: 'text-warning', bg: 'bg-warning/10' },
-    { name: 'Total LWP Used', value: '-', icon: AlertTriangle, color: 'text-destructive', bg: 'bg-destructive/10' },
+    // { name: 'Total SL Used', value: '-', icon: FileSpreadsheet, color: 'text-warning', bg: 'bg-warning/10' },
+    // { name: 'Total CL Used', value: '-', icon: FileSpreadsheet, color: 'text-warning', bg: 'bg-warning/10' },
+    // { name: 'Total LWP Used', value: '-', icon: AlertTriangle, color: 'text-destructive', bg: 'bg-destructive/10' },
     { name: 'Pending Leaves', value: '-', icon: Clock, color: 'text-primary', bg: 'bg-primary/10' },
-    { name: 'Half Day Requests', value: '-', icon: Clock, color: 'text-warning', bg: 'bg-warning/10' },
+    // { name: 'Half Day Requests', value: '-', icon: Clock, color: 'text-warning', bg: 'bg-warning/10' },
   ];
 
   const stats = (data && data.stats) ? [
     { name: 'Total Employees', value: data.stats.totalEmployees ?? '-', icon: Users, color: 'text-primary', bg: 'bg-primary/10' },
     { name: 'Present Today', value: data.stats.presentToday ?? '-', icon: UserCheck, color: 'text-success', bg: 'bg-success/10' },
     { name: 'Absent Today', value: data.stats.absentToday ?? '-', icon: AlertTriangle, color: 'text-destructive', bg: 'bg-destructive/10' },
-    { name: 'Total SL Used', value: data.stats.totalSLUsed ?? '-', icon: FileSpreadsheet, color: 'text-warning', bg: 'bg-warning/10' },
-    { name: 'Total CL Used', value: data.stats.totalCLUsed ?? '-', icon: FileSpreadsheet, color: 'text-warning', bg: 'bg-warning/10' },
-    { name: 'Total LWP Used', value: data.stats.totalLWPUsed ?? '-', icon: AlertTriangle, color: 'text-destructive', bg: 'bg-destructive/10' },
+    // { name: 'Total SL Used', value: data.stats.totalSLUsed ?? '-', icon: FileSpreadsheet, color: 'text-warning', bg: 'bg-warning/10' },
+    // { name: 'Total CL Used', value: data.stats.totalCLUsed ?? '-', icon: FileSpreadsheet, color: 'text-warning', bg: 'bg-warning/10' },
+    // { name: 'Total LWP Used', value: data.stats.totalLWPUsed ?? '-', icon: AlertTriangle, color: 'text-destructive', bg: 'bg-destructive/10' },
     { name: 'Pending Leaves', value: data.stats.pendingLeaves ?? '-', icon: Clock, color: 'text-primary', bg: 'bg-primary/10' },
-    { name: 'Half Day Requests', value: data.stats.halfDayRequests ?? '-', icon: Clock, color: 'text-warning', bg: 'bg-warning/10' },
+    // { name: 'Half Day Requests', value: data.stats.halfDayRequests ?? '-', icon: Clock, color: 'text-warning', bg: 'bg-warning/10' },
   ] : defaultStats;
 
   return (

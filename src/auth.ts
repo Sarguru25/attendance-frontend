@@ -7,7 +7,15 @@ class InactiveAccountError extends CredentialsSignin {
   code = 'inactive_account';
 }
 
-const BACKEND_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000').replace(/\/$/, '');
+const getBackendUrl = () => {
+  let url = (process.env.BACKEND_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000').trim().replace(/\/$/, '');
+  if (!url.startsWith('http://localhost') && !url.startsWith('http://127.0.0.1') && url.startsWith('http://')) {
+    url = url.replace('http://', 'https://');
+  }
+  return url;
+};
+
+const BACKEND_URL = getBackendUrl();
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...authConfig,
@@ -35,14 +43,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             }),
           });
 
-          const data = await res.json();
+          const data = await res.json().catch(() => ({}));
 
           if (!res.ok || !data.success) {
             if (res.status === 403 || data.code === 'inactive_account') {
               console.log('Login failed: user account is deactivated');
               throw new InactiveAccountError();
             }
-            console.log('Login failed: invalid credentials or backend rejected');
+            console.log(`Login failed (status ${res.status}): ${data.error || data.message || 'invalid credentials or backend rejected'}`);
             return null;
           }
 

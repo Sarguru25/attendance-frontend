@@ -9,9 +9,13 @@ import { api } from '@/services/api';
 
 function getAttachmentUrl(file: string): string {
   if (!file) return '';
-  const match = file.match(/\/file\/([a-zA-Z0-9]+)/);
-  if (match) {
-    return `/api/leaves/attachment/${match[1]}`;
+  const fileMatch = file.match(/\/file\/([a-zA-Z0-9]+)/);
+  if (fileMatch) {
+    return `/api/backend/leaves/attachment/${fileMatch[1]}`;
+  }
+  const attachMatch = file.match(/\/attachment\/([a-zA-Z0-9]+)/);
+  if (attachMatch) {
+    return `/api/backend/leaves/attachment/${attachMatch[1]}`;
   }
   return file;
 }

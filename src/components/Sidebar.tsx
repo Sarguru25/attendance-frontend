@@ -135,7 +135,15 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
       </div>
       <div className="flex-shrink-0 flex border-t border-border p-4">
         <button
-          onClick={() => signOut()}
+          onClick={() => {
+            try {
+              localStorage.removeItem('token');
+              localStorage.removeItem('activeCompanyId');
+              document.cookie = 'token=; path=/; max-age=0; SameSite=Lax';
+              document.cookie = 'activeCompanyId=; path=/; max-age=0; SameSite=Lax';
+            } catch (e) {}
+            signOut();
+          }}
           className="flex-shrink-0 w-full group block"
         >
           <div className="flex items-center">

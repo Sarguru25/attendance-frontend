@@ -2,12 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { signIn } from 'next-auth/react';
+import { signIn, getSession } from 'next-auth/react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import Image from 'next/image';
+import { setCachedToken, setCachedCompanyId } from '@/services/api';
 
 const loginSchema = z.object({
   email: z.string().email({ message: 'Invalid email address' }),
@@ -58,6 +59,23 @@ export default function LoginPage() {
           setError('Invalid email or password');
         }
       } else {
+        try {
+          const session = await getSession();
+          const token = (session as any)?.accessToken || (session?.user as any)?.accessToken;
+          if (token) {
+            setCachedToken(token);
+            localStorage.setItem('token', token);
+            document.cookie = `token=${encodeURIComponent(token)}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax`;
+          }
+          const companyId = (session as any)?.user?.companyId || (session as any)?.companyId;
+          if (companyId) {
+            setCachedCompanyId(companyId);
+            localStorage.setItem('activeCompanyId', companyId);
+            document.cookie = `activeCompanyId=${encodeURIComponent(companyId)}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax`;
+          }
+        } catch (e) {
+          // Non-critical fallback
+        }
         router.push('/');
         router.refresh();
       }

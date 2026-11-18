@@ -9,6 +9,7 @@ export const authConfig = {
         token.id = user.id;
         token.companyId = user.companyId;
         token.companyIds = user.companyIds;
+        token.accessToken = (user as any).accessToken;
       }
       return token;
     },
@@ -18,6 +19,8 @@ export const authConfig = {
         session.user.id = token.id as string;
         session.user.companyId = token.companyId as string | undefined;
         session.user.companyIds = (token.companyIds as string[]) || [];
+        (session.user as any).accessToken = token.accessToken as string | undefined;
+        (session as any).accessToken = token.accessToken as string | undefined;
       }
       return session;
     },

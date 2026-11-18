@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import axios from 'axios';
+import { api } from '@/services/api';
 import { toast } from 'react-hot-toast';
 import {
   Plus,
@@ -100,8 +100,10 @@ export default function ShiftsClient() {
 
   const refreshShifts = async () => {
     try {
-      const res = await axios.get('/api/shifts');
-      setShifts(res.data.shifts || []);
+      const res = await api('/api/shifts');
+      if (!res.ok) throw new Error('Failed to load shifts');
+      const data = await res.json();
+      setShifts(data.shifts || []);
     } catch {
       toast.error('Failed to load shifts');
     }
@@ -111,9 +113,11 @@ export default function ShiftsClient() {
     let isMounted = true;
     const load = async () => {
       try {
-        const res = await axios.get('/api/shifts');
+        const res = await api('/api/shifts');
+        if (!res.ok) throw new Error('Failed to load shifts');
+        const data = await res.json();
         if (isMounted) {
-          setShifts(res.data.shifts || []);
+          setShifts(data.shifts || []);
         }
       } catch {
         if (isMounted) {
@@ -291,28 +295,37 @@ export default function ShiftsClient() {
     };
 
     try {
-      if (editingId) {
-        await axios.put(`/api/shifts/${editingId}`, payload);
-        toast.success('Shift updated successfully');
-      } else {
-        await axios.post('/api/shifts', payload);
-        toast.success('Shift created successfully');
+      const res = editingId
+        ? await api(`/api/shifts/${editingId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+        : await api('/api/shifts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || errData.message || 'Failed to save shift');
       }
+
+      toast.success(editingId ? 'Shift updated successfully' : 'Shift created successfully');
       setIsModalOpen(false);
       refreshShifts();
     } catch (err: unknown) {
-      if (axios.isAxiosError(err)) {
-        toast.error(err.response?.data?.error || 'Failed to save shift');
-      } else {
-        toast.error('Failed to save shift');
-      }
+      const errorMsg = err instanceof Error ? err.message : 'Failed to save shift';
+      toast.error(errorMsg);
     }
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this shift?')) return;
     try {
-      await axios.delete(`/api/shifts/${id}`);
+      const res = await api(`/api/shifts/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete shift');
       toast.success('Shift deleted');
       refreshShifts();
     } catch {
